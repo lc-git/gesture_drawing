@@ -7,28 +7,19 @@
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
             margin: 0;
-            background-color: #282c34;
+            padding: 0;
+            background-color: #000;
             color: white;
+            overflow: hidden;
         }
         .container {
-            position: relative;
-            width: 80vw;
-            max-width: 900px;
-            border-radius: 15px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        /* 保持视频的宽高比 */
-        .container:before {
-            content: "";
-            display: block;
-            padding-top: 56.25%; /* 16:9 宽高比 */
         }
         video, canvas {
             position: absolute;
@@ -48,9 +39,13 @@
             z-index: 20;
         }
         .controls {
-            margin-top: 20px;
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
             gap: 15px;
+            z-index: 30;
         }
         button {
             padding: 10px 20px;
@@ -66,23 +61,47 @@
         button:hover {
             background-color: #21a1f2;
         }
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
+            color: white;
+            padding: 20px;
+            z-index: 25;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .header p {
+            margin: 0;
+            font-size: 14px;
+            opacity: 0.9;
+        }
         .info {
             position: fixed;
             top: 15px;
             left: 15px;
-            background-color: rgba(0, 0, 0, 0.6);
+            background-color: rgba(0, 0, 0, 0.8);
             color: #61dafb;
-            padding: 8px 12px;
+            padding: 12px 16px;
             border-radius: 8px;
             font-size: 16px;
-            z-index: 20;
-            /* 使用fixed定位，不受容器镜像翻转影响 */
+            z-index: 30;
+            backdrop-filter: blur(5px);
         }
     </style>
 </head>
 <body>
-    <h1>手部追踪画图应用</h1>
-    <p>请将食指和拇指捏合在一起开始画画，松开则停止。</p>
+    <div class="header">
+        <h1>手部追踪画图应用</h1>
+        <p>请将食指和拇指捏合在一起开始画画，松开则停止。</p>
+    </div>
     
     <div class="container">
         <video id="video" playsinline></video>
