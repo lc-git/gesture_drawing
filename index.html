@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手部追踪画图应用</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #282c34;
+            color: white;
+        }
+        .container {
+            position: relative;
+            width: 80vw;
+            max-width: 900px;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        /* 保持视频的宽高比 */
+        .container:before {
+            content: "";
+            display: block;
+            padding-top: 56.25%; /* 16:9 宽高比 */
+        }
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* 镜像翻转，这样你的动作和画面就是一致的，像照镜子 */
+            transform: scaleX(-1);
+        }
+        #canvas {
+            /* 绘画canvas */
+            z-index: 10;
+        }
+        #overlayCanvas {
+            /* 手部标注canvas，在最上层 */
+            z-index: 20;
+        }
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #61dafb;
+            color: #282c34;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #21a1f2;
+        }
+        .info {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: #61dafb;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            z-index: 20;
+            /* 使用fixed定位，不受容器镜像翻转影响 */
+        }
+    </style>
+</head>
+<body>
+    <h1>手部追踪画图应用</h1>
+    <p>请将食指和拇指捏合在一起开始画画，松开则停止。</p>
+    
+    <div class="container">
+        <video id="video" playsinline></video>
+        <canvas id="canvas"></canvas>
+        <canvas id="overlayCanvas"></canvas>
+    </div>
+    <div id="info" class="info">正在加载模型...</div>
+
+    <div class="controls">
+        <button id="clearButton">清除画板</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <script>
+        const videoElement = document.getElementById('video');
+        const canvasElement = document.getElementById('canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const overlayCtx = overlayCanvas.getContext('2d');
+        const clearButton = document.getElementById('clearButton');
+        const infoElement = document.getElementById('info');
+
+        let isDrawing = false;
+        let lastX, lastY;
+
+        // 设置画笔样式
+        canvasCtx.strokeStyle = '#61dafb'; // 亮蓝色
+        canvasCtx.lineWidth = 5;
+        canvasCtx.lineCap = 'round';
+        canvasCtx.lineJoin = 'round';
+
+        // 绘制手部关键点的函数
+        function drawHandLandmarks(landmarks) {
+            // 清空overlay canvas
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            
+            // 绘制所有关键点
+            landmarks.forEach((landmark, index) => {
+                const x = landmark.x * overlayCanvas.width;
+                const y = landmark.y * overlayCanvas.height;
+                
+                // 为不同部位设置不同颜色
+                let color = '#61dafb'; // 默认蓝色
+                let size = 4;
+                
+                // 拇指关键点 - 红色
+                if (index >= 1 && index <= 4) {
+                    color = '#ff6b6b';
+                    size = 6;
+                }
+                // 食指关键点 - 绿色
+                else if (index >= 5 && index <= 8) {
+                    color = '#51cf66';
+                    size = 6;
+                }
+                // 中指关键点 - 黄色
+                else if (index >= 9 && index <= 12) {
+                    color = '#ffd43b';
+                    size = 5;
+                }
+                // 无名指关键点 - 紫色
+                else if (index >= 13 && index <= 16) {
+                    color = '#ae8cff';
+                    size = 5;
+                }
+                // 小指关键点 - 橙色
+                else if (index >= 17 && index <= 20) {
+                    color = '#ff922b';
+                    size = 5;
+                }
+                
+                // 绘制关键点
+                overlayCtx.beginPath();
+                overlayCtx.arc(x, y, size, 0, 2 * Math.PI);
+                overlayCtx.fillStyle = color;
+                overlayCtx.fill();
+                overlayCtx.strokeStyle = 'white';
+                overlayCtx.lineWidth = 1;
+                overlayCtx.stroke();
+            });
+            
+            // 绘制手部轮廓连接线
+            overlayCtx.strokeStyle = '#61dafb';
+            overlayCtx.lineWidth = 2;
+            
+            // 拇指连接线
+            drawConnections(landmarks, [1, 2, 3, 4]);
+            // 食指连接线
+            drawConnections(landmarks, [0, 5, 6, 7, 8]);
+            // 中指连接线
+            drawConnections(landmarks, [0, 9, 10, 11, 12]);
+            // 无名指连接线
+            drawConnections(landmarks, [0, 13, 14, 15, 16]);
+            // 小指连接线
+            drawConnections(landmarks, [0, 17, 18, 19, 20]);
+        }
+        
+        // 绘制连接线的辅助函数
+        function drawConnections(landmarks, indices) {
+            overlayCtx.beginPath();
+            for (let i = 0; i < indices.length; i++) {
+                const landmark = landmarks[indices[i]];
+                const x = landmark.x * overlayCanvas.width;
+                const y = landmark.y * overlayCanvas.height;
+                
+                if (i === 0) {
+                    overlayCtx.moveTo(x, y);
+                } else {
+                    overlayCtx.lineTo(x, y);
+                }
+            }
+            overlayCtx.stroke();
+        }
+
+        function onResults(results) {
+            // 只在第一次或canvas尺寸不匹配时设置尺寸
+            if (canvasElement.width !== videoElement.videoWidth || canvasElement.height !== videoElement.videoHeight) {
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                overlayCanvas.width = videoElement.videoWidth;
+                overlayCanvas.height = videoElement.videoHeight;
+                console.log('Canvas resized to:', canvasElement.width, 'x', canvasElement.height);
+            }
+
+            infoElement.textContent = "模型加载成功！请将手放入镜头内。";
+
+            // 重新设置画笔样式
+            canvasCtx.strokeStyle = '#61dafb'; // 亮蓝色
+            canvasCtx.lineWidth = 5;
+            canvasCtx.lineCap = 'round';
+            canvasCtx.lineJoin = 'round';
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // 我们只关心第一只检测到的手
+                const handLandmarks = results.multiHandLandmarks[0];
+
+                // 绘制手部关键点
+                drawHandLandmarks(handLandmarks);
+
+                // 获取食指指尖 (ID 8) 和拇指指尖 (ID 4) 的坐标
+                // 坐标是归一化的 (0.0 - 1.0)，需要乘以宽高转换
+                const indexFinger = handLandmarks[8];
+                const thumb = handLandmarks[4];
+
+                const currentX = indexFinger.x * canvasElement.width;
+                const currentY = indexFinger.y * canvasElement.height;
+
+                // 计算食指和拇指之间的距离
+                const distance = Math.sqrt(
+                    Math.pow(indexFinger.x - thumb.x, 2) +
+                    Math.pow(indexFinger.y - thumb.y, 2)
+                );
+                
+                // 设置一个阈值，小于这个值就算作 "捏合"
+                const pinchThreshold = 0.06;
+
+                if (distance < pinchThreshold) {
+                    // --- 捏合状态：开始/继续画画 ---
+                    infoElement.textContent = "状态：正在绘画... 🖌️";
+                    if (!isDrawing) {
+                        // 刚开始画，记录起点
+                        isDrawing = true;
+                        lastX = currentX;
+                        lastY = currentY;
+                    }
+
+                    // 从上一个点画到当前点
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(lastX, lastY);
+                    canvasCtx.lineTo(currentX, currentY);
+                    canvasCtx.stroke();
+                    
+                    // 更新上一个点的位置
+                    lastX = currentX;
+                    lastY = currentY;
+
+                } else {
+                    // --- 松开状态：停止画画 ---
+                    infoElement.textContent = "状态：抬起画笔";
+                    isDrawing = false;
+                }
+
+            } else {
+                // 没有检测到手
+                infoElement.textContent = "请将手放入镜头内";
+                isDrawing = false; // 如果手移出画面，也应停止绘画
+                // 清空手部标注
+                overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            }
+        }
+        
+        // --- 初始化 MediaPipe Hands ---
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        hands.setOptions({
+            maxNumHands: 1, // 只追踪一只手
+            modelComplexity: 1, // 模型复杂度，0=lite, 1=full
+            minDetectionConfidence: 0.6, // 最小检测置信度
+            minTrackingConfidence: 0.6  // 最小追踪置信度
+        });
+        hands.onResults(onResults);
+
+        // --- 初始化并启动摄像头 ---
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        
+        // 等待视频加载完成后初始化canvas
+        videoElement.addEventListener('loadedmetadata', () => {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            overlayCanvas.width = videoElement.videoWidth;
+            overlayCanvas.height = videoElement.videoHeight;
+            console.log('Canvas initialized with video dimensions:', canvasElement.width, 'x', canvasElement.height);
+        });
+        
+        camera.start();
+
+        // --- 清除按钮功能 ---
+        clearButton.addEventListener('click', () => {
+            // 确保canvas尺寸正确
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            overlayCanvas.width = videoElement.videoWidth;
+            overlayCanvas.height = videoElement.videoHeight;
+            // 重新设置画笔样式
+            canvasCtx.strokeStyle = '#61dafb';
+            canvasCtx.lineWidth = 5;
+            canvasCtx.lineCap = 'round';
+            canvasCtx.lineJoin = 'round';
+            console.log("画板已清除");
+        });
+
+    </script>
+</body>
+</html>
