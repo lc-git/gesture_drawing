@@ -95,12 +95,125 @@
             z-index: 30;
             backdrop-filter: blur(5px);
         }
+        
+        .toolbar {
+            position: fixed;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 15px;
+            padding: 15px;
+            z-index: 30;
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .tool-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .tool-section h3 {
+            color: white;
+            margin: 0;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .tool-item {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .tool-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .tool-item.active {
+            border-color: #61dafb;
+            border-width: 3px;
+            background: rgba(97, 218, 251, 0.3);
+            transform: scale(1.15);
+            box-shadow: 0 0 15px rgba(97, 218, 251, 0.6);
+        }
+        
+        .color-palette {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 5px;
+        }
+        
+        .color-item {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            border: 2px solid white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .color-item:hover {
+            transform: scale(1.2);
+        }
+        
+        .color-item.active {
+            border-color: #61dafb;
+            border-width: 3px;
+            transform: scale(1.3);
+            box-shadow: 0 0 10px rgba(97, 218, 251, 0.8);
+        }
+        
+        .brush-size {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .size-item {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background: #61dafb;
+            border: 2px solid white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        
+        .size-item:hover {
+            transform: scale(1.1);
+        }
+        
+        .size-item.active {
+            border-color: #61dafb;
+            border-width: 3px;
+            transform: scale(1.2);
+            box-shadow: 0 0 10px rgba(97, 218, 251, 0.8);
+            background: linear-gradient(45deg, #61dafb, #21a1f2);
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>手部追踪画图应用</h1>
-        <p>请将食指和拇指捏合在一起开始画画，松开则停止。</p>
+        <p>🖌️ 手势绘画：食指伸出或捏合 | 🖱️ 鼠标控制：右侧工具栏选择工具、颜色和粗细</p>
     </div>
     
     <div class="container">
@@ -109,6 +222,35 @@
         <canvas id="overlayCanvas"></canvas>
     </div>
     <div id="info" class="info">正在加载模型...</div>
+
+    <div class="toolbar">
+        <div class="tool-section">
+            <h3>工具</h3>
+            <div class="tool-item active" id="brushTool" title="画笔工具">🖌️</div>
+            <div class="tool-item" id="eraserTool" title="橡皮擦">🧽</div>
+        </div>
+        
+        <div class="tool-section">
+            <h3>颜色</h3>
+            <div class="color-palette" id="colorPalette">
+                <div class="color-item active" style="background-color: #61dafb;" data-color="#61dafb"></div>
+                <div class="color-item" style="background-color: #ff6b6b;" data-color="#ff6b6b"></div>
+                <div class="color-item" style="background-color: #51cf66;" data-color="#51cf66"></div>
+                <div class="color-item" style="background-color: #ffd43b;" data-color="#ffd43b"></div>
+                <div class="color-item" style="background-color: #ae8cff;" data-color="#ae8cff"></div>
+                <div class="color-item" style="background-color: #ff922b;" data-color="#ff922b"></div>
+            </div>
+        </div>
+        
+        <div class="tool-section">
+            <h3>粗细</h3>
+            <div class="brush-size" id="brushSize">
+                <div class="size-item active" data-size="2">S</div>
+                <div class="size-item" data-size="6">M</div>
+                <div class="size-item" data-size="12">L</div>
+            </div>
+        </div>
+    </div>
 
     <div class="controls">
         <button id="clearButton">清除画板</button>
@@ -129,12 +271,30 @@
 
         let isDrawing = false;
         let lastX, lastY;
-
-        // 设置画笔样式
-        canvasCtx.strokeStyle = '#61dafb'; // 亮蓝色
-        canvasCtx.lineWidth = 5;
-        canvasCtx.lineCap = 'round';
-        canvasCtx.lineJoin = 'round';
+        
+        // 工具状态
+        let currentTool = 'brush'; // 'brush' 或 'eraser'
+        let currentColor = '#61dafb';
+        let currentSize = 2;
+        
+        // 初始化工具样式
+        function updateBrushStyle() {
+            if (currentTool === 'brush') {
+                // 画笔模式：重置混合模式，使用选择的颜色
+                canvasCtx.globalCompositeOperation = 'source-over';
+                canvasCtx.strokeStyle = currentColor;
+                canvasCtx.lineWidth = currentSize;
+            } else {
+                // 橡皮擦模式：使用destination-out混合模式来真正擦除内容
+                canvasCtx.globalCompositeOperation = 'destination-out';
+                canvasCtx.strokeStyle = 'rgba(0,0,0,1)';
+                canvasCtx.lineWidth = currentSize;
+            }
+            canvasCtx.lineCap = 'round';
+            canvasCtx.lineJoin = 'round';
+        }
+        
+        updateBrushStyle();
 
         // 绘制手部关键点的函数
         function drawHandLandmarks(landmarks) {
@@ -231,11 +391,8 @@
 
             infoElement.textContent = "模型加载成功！请将手放入镜头内。";
 
-            // 重新设置画笔样式
-            canvasCtx.strokeStyle = '#61dafb'; // 亮蓝色
-            canvasCtx.lineWidth = 5;
-            canvasCtx.lineCap = 'round';
-            canvasCtx.lineJoin = 'round';
+            // 确保使用当前选择的工具样式
+            updateBrushStyle();
             
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 // 我们只关心第一只检测到的手
@@ -263,7 +420,7 @@
 
                 if (distance < pinchThreshold) {
                     // --- 捏合状态：开始/继续画画 ---
-                    infoElement.textContent = "状态：正在绘画... 🖌️";
+                    infoElement.textContent = `状态：正在绘画... ${currentTool === 'brush' ? '🖌️' : '🧽'}`;
                     if (!isDrawing) {
                         // 刚开始画，记录起点
                         isDrawing = true;
@@ -271,6 +428,9 @@
                         lastY = currentY;
                     }
 
+                    // 确保使用当前选择的工具样式
+                    updateBrushStyle();
+                    
                     // 从上一个点画到当前点
                     canvasCtx.beginPath();
                     canvasCtx.moveTo(lastX, lastY);
@@ -328,6 +488,74 @@
         
         camera.start();
 
+        // --- 鼠标事件监听器 ---
+        
+        // 工具选择
+        document.getElementById('brushTool').addEventListener('click', () => {
+            selectTool('brush');
+        });
+        
+        document.getElementById('eraserTool').addEventListener('click', () => {
+            selectTool('eraser');
+        });
+        
+        // 颜色选择
+        document.querySelectorAll('.color-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const color = item.dataset.color;
+                selectColor(color);
+            });
+        });
+        
+        // 画笔粗细选择
+        document.querySelectorAll('.size-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const size = parseInt(item.dataset.size);
+                selectSize(size);
+            });
+        });
+        
+        // 工具选择函数
+        function selectTool(tool) {
+            currentTool = tool;
+            updateBrushStyle();
+            updateToolbarUI();
+            console.log(`切换到${tool === 'brush' ? '画笔' : '橡皮擦'}工具`);
+            infoElement.textContent = `已选择: ${tool === 'brush' ? '画笔' : '橡皮擦'}工具`;
+        }
+        
+        function selectColor(color) {
+            currentColor = color;
+            updateBrushStyle();
+            updateToolbarUI();
+            console.log(`选择颜色: ${color}`);
+            infoElement.textContent = `已选择颜色: ${color}`;
+        }
+        
+        function selectSize(size) {
+            currentSize = size;
+            updateBrushStyle();
+            updateToolbarUI();
+            console.log(`选择画笔粗细: ${size}`);
+            infoElement.textContent = `已选择画笔粗细: ${size}`;
+        }
+        
+        function updateToolbarUI() {
+            // 更新工具选择
+            document.getElementById('brushTool').classList.toggle('active', currentTool === 'brush');
+            document.getElementById('eraserTool').classList.toggle('active', currentTool === 'eraser');
+            
+            // 更新颜色选择
+            document.querySelectorAll('.color-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.color === currentColor);
+            });
+            
+            // 更新画笔粗细选择
+            document.querySelectorAll('.size-item').forEach(item => {
+                item.classList.toggle('active', parseInt(item.dataset.size) === currentSize);
+            });
+        }
+
         // --- 清除按钮功能 ---
         clearButton.addEventListener('click', () => {
             // 确保canvas尺寸正确
@@ -336,10 +564,7 @@
             overlayCanvas.width = videoElement.videoWidth;
             overlayCanvas.height = videoElement.videoHeight;
             // 重新设置画笔样式
-            canvasCtx.strokeStyle = '#61dafb';
-            canvasCtx.lineWidth = 5;
-            canvasCtx.lineCap = 'round';
-            canvasCtx.lineJoin = 'round';
+            updateBrushStyle();
             console.log("画板已清除");
         });
 
